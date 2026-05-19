@@ -1,6 +1,6 @@
 ---
 name: release-digest
-description: "Digest of Claude Code changes since the last time you checked. Run instead of or right after /release-notes. Triggers: /release-digest, \"what's new in Claude Code\", \"CC release digest\", \"changes since I last checked\"."
+description: "Curated digest of Claude Code changes since you last checked — only what affects a daily user's workflow. For verbatim notes, run /release-notes. Triggers: /release-digest, \"what's new in Claude Code\", \"CC release digest\", \"changes since I last checked\"."
 argument-hint: "[N]   (N = days to look back; omit = only what's new since last run; --reset = mark all seen)"
 allowed-tools:
   - Bash
@@ -11,48 +11,50 @@ user-invocable: true
 ---
 
 <objective>
-`/release-notes` is a Claude Code built-in that dumps the entire changelog with
-no dates and no memory of what you've already seen. This skill is the self-paced
-companion: it keeps a checkpoint and, each run, reports ONLY the versions
-released since the last time it ran. The delta is measured against the latest
-**released** version upstream (not the locally-installed one), so it surfaces
-changes even before you update.
+A CURATED digest of Claude Code changes since the last time you checked —
+not a verbatim mirror. The built-in `/release-notes` is the verbatim source
+of truth; this skill exists for the curation. Pulls only changes that affect
+a typical user's daily workflow; hard-skips niche flags, internals, narrow
+bug fixes, and platform-edge cosmetic fixes.
+
+Failure mode: emitting items the user would skim past muttering "who uses
+this." Cutting too aggressively is forgiven; over-inclusion is the bug.
 </objective>
 
 <architecture>
-The heavy work (one large WebFetch + slicing the verbatim changelog + emitting
-the digest) runs inside a sub-agent on Sonnet, not on the main thread. Reasons:
+The skill runs the heavy reading + curation inside a sub-agent on Sonnet:
 
-1. **Model isolation from credit gates.** The session model may be Opus with
-   1M-context, which requires paid usage credits — emitting hundreds of
-   verbatim lines on the main thread can trip that gate. A sub-agent on Sonnet
-   has its own model and a fresh context, so it never triggers the gate.
-2. **Speed.** Sonnet streams the verbatim section meaningfully faster than
-   Opus.
-3. **Resilience.** If the session model changes, the skill keeps working.
+1. **Credit-gate safety.** The session may be on Opus 1M-context, and the
+   WebFetch payload (~700 lines for a multi-version delta) plus session
+   history could trip the paid-tier gate. The sub-agent has a fresh small
+   context — never trips, regardless of session state.
+2. **Output is small either way.** Sub-agent reads ~700 verbatim bullets but
+   returns only ≤8 curated items, so the orchestrator's relay is tiny and
+   fast on any model.
 
-The orchestrator (main thread) does only cheap, deterministic work: argument
-parsing, checkpoint read/write, one `curl` to npm, delta computation. Then it
-delegates the rest to the sub-agent. The orchestrator relays the sub-agent's
-final message verbatim — no preface, no commentary.
+Orchestrator only does cheap deterministic work: curl, checkpoint read/write,
+delta math, sub-agent dispatch. The orchestrator does NOT read the verbatim
+changelog — that stays inside the sub-agent's context and is discarded when
+it finishes.
 </architecture>
 
 <cost-contract>
-EXACTLY TWO network calls across the whole run:
+EXACTLY TWO network calls across the run:
 
-1. `curl` the npm registry (on main) → authoritative `latest` version AND
-   every version's publish date in one JSON response.
-2. One `WebFetch` (inside the sub-agent) → GitHub raw `CHANGELOG.md`, sliced
-   to the delta range, verbatim.
+1. `curl` the npm registry (on main) — authoritative `latest` AND every
+   version's publish date, in one JSON response.
+2. One `WebFetch` (inside the sub-agent) — GitHub raw `CHANGELOG.md`, the
+   delta range, verbatim. The sub-agent reads it and curates; it is never
+   relayed verbatim to chat.
 
 For `--reset` and the no-op fast path, only call 1 happens — no sub-agent.
 
-FORBIDDEN (banned because they caused a 5-minute run before):
-- Re-fetching the CHANGELOG to "check latest" — npm already gives `latest`.
-- `WebSearch`, releasebot.io, claudelog, claudefa, any aggregator — for
-  content or for dates. The npm registry is the only date source.
-- Any third network call for any reason. If something fails, STOP and report
-  the error — no fallback fetch, no improvisation.
+FORBIDDEN — caused a 5-minute run before, banned:
+- Re-fetching the CHANGELOG to "check latest" — npm gives `latest`.
+- `WebSearch`, releasebot.io, claudelog, claudefa, any aggregator. The npm
+  registry is the only date source.
+- Any third network call. If something fails, STOP and report — no fallback.
+- Emitting the verbatim changelog. That is what `/release-notes` is for.
 </cost-contract>
 
 <context>
@@ -101,8 +103,8 @@ curl -s "https://registry.npmjs.org/@anthropic-ai/claude-code" \
               | map({(.key): (.value[0:10])}) | add)}'
 ```
 
-This is a pure Bash call — no model generation, no credit gate risk. Parse
-`latest` and `dates`. If curl/jq fails, STOP with the error.
+Pure Bash — no model generation, no credit-gate risk. Parse `latest` and
+`dates`. If curl/jq fails, STOP with the error.
 
 ### 4. Compute the delta set (no network)
 Start point:
@@ -111,120 +113,154 @@ Start point:
 - else if checkpoint exists → every version `>` `last_version_seen`.
 - else (bootstrap) → every version within the last 8 days of `latest`'s date.
 
-Compare versions numerically by component (`2.1.139` < `2.1.140` < `2.2.0`);
-handle minor/major rollover.
+Compare versions numerically by component.
 
 **No-op fast path — checkpoint mode only, if `last_version_seen ≥ latest`:**
 emit EXACTLY these two lines and nothing else, then go to step 7 (refresh
-date) and STOP. (Does NOT apply to a bare-number run — that explicitly asked
-for a window.)
+date) and STOP:
 
 ```
 No new releases since <last_checked> (latest is still v<latest>).
 Installed: v<x> · Changelog: v<latest>
 ```
 
-(Omit the second line only if `claude --version` errors.) Do NOT restate this
-in prose, explain the checkpoint, add filler, or comment on installed-vs-
-changelog skew. One fact, stated once. Any sentence beyond these two lines is
-a skill violation.
+(Omit line 2 only if `claude --version` errors.) One fact, stated once. Any
+sentence beyond these two lines is a skill violation.
 
-Because step 1 ran via Bash and this fast path emits only two lines, it never
-trips the 1M-context credit gate.
-
-### 5. Delegate the digest to a Sonnet sub-agent (NETWORK CALL 2 happens inside)
-Spawn one Agent tool call with these exact parameters:
+### 5. Delegate curation to a Sonnet sub-agent
+Spawn one Agent tool call:
 
 - `subagent_type`: `general-purpose`
 - `model`: `sonnet`
-- `description`: `Render Claude Code release digest`
-- `prompt`: use the template below, filling in the placeholders
+- `description`: `Curate Claude Code release digest`
+- `prompt`: use the template below, filling in placeholders
 
-Prompt template for the sub-agent:
+Prompt template (NETWORK CALL 2 happens inside):
 
 ```
-You are rendering a Claude Code release digest. You run on Sonnet
-specifically to (a) avoid the parent session's 1M-context credit gate and
-(b) stream the verbatim changelog faster than Opus would.
+You are curating a Claude Code release digest. You run on Sonnet in a fresh
+context to keep the parent session clean of the ~700-line verbatim payload.
 
-WORLD-CLASS STANDARD applies to your output: no placeholders, no shortcuts,
-no truncation of verbatim content, no near-misses. Every bullet from the
-delta range appears, faithful to the source.
+WORLD-CLASS STANDARD: ruthless curation, no padding, no completeness theater.
+The user's complaint is verbosity — they see this output AS-IS and want only
+items they actually care about. Cutting too much is forgiven; including a
+"who-uses-this" item is the failure mode.
 
-Inputs from the orchestrator (already computed):
-- delta_versions:  <comma-separated list, newest first, e.g. "A.B.C,A.B.D,A.B.E">
+Inputs from the orchestrator:
+- delta_versions:  <comma-separated, newest first, e.g. "A.B.C,A.B.D">
 - dates:           <JSON map: {"A.B.C":"YYYY-MM-DD", ...}>
 - latest:          <e.g. "A.B.C">
-- start_version:   <oldest in delta, e.g. "2.1.142">
+- start_version:   <oldest in delta>
 - start_date:      <date of start_version>
 - latest_date:     <date of latest>
 - installed:       <output of `claude --version`, or "" if it errored>
 
-ONE network call permitted (and required): a single WebFetch to
+Do ONE WebFetch to
 https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
 asking for every bullet, verbatim and complete, for every version in
-delta_versions. Do not summarize, do not drop lines. If the fetch fails,
-return exactly: `ERROR: changelog fetch failed — <reason>` and stop. No
-fallback to aggregator sites.
+delta_versions. You read these to decide what to include — you do NOT emit
+them. If the fetch fails, return exactly: `ERROR: changelog fetch failed —
+<reason>` and stop. No fallback to aggregator sites.
 
-Then emit your FINAL message in this exact shape — no preface, no
-"Here's the digest:" framing, no trailing commentary. Your final message IS
-what the user sees.
+Then apply this STRICT curation filter. Hard cap: 8 items total across the
+whole digest. Aim for 4–6.
+
+INCLUDE (a change qualifies only if it clearly hits one of these):
+- Model behavior changes — Opus/Sonnet/Haiku/`/fast`/effort/context-window.
+- Default changes to commands a typical user invokes interactively
+  (`/model`, `/resume`, `/clear`, `/plugin`, `/branch`, `/loop`, common
+  slash commands).
+- Renamed or removed commands (muscle-memory shift).
+- Major new top-level features — a new view, a new mode, a new top-level
+  command. NOT new flags on existing commands.
+- Architecture-level changes to the skill / hook / MCP / subagent systems
+  that change how someone builds with them.
+- Security or auth changes that affect everyone.
+- A bug fix ONLY IF it was a regression that broke daily-driver functionality
+  (startup hang, common crash, a slash command suddenly not working) and the
+  changelog itself frames it that way.
+
+EXCLUDE — every one of these is an automatic cut, no exceptions:
+- Niche subcommands and flags most users never type: `claude respawn`,
+  `claude --bg --name`, `claude agents --json`, `claude plugin validate`,
+  `claude logs <id>`, etc.
+- Bug fixes with narrow scope ("Fixed X when Y happens in Z environment").
+- Internals: OTEL spans, daemon behavior, file-descriptor exhaustion,
+  GraphQL query updates, cache/lock-file/encoding fixes.
+- Platform-edge fixes (Windows-specific, WSL, network-drive, CJK rendering,
+  PowerShell version-specific) unless cross-platform impact is explicit.
+- Plugin-author / MCP-author internals.
+- Cosmetic UI fixes: color bleeds, ghost characters, spinner color counts,
+  table-wrapping artifacts, fullscreen-only quirks.
+- "Improved X" performance items under ~10% impact.
+- Restoring/re-enabling obscure features after a regression.
+- Anything where the answer to "would I notice if this didn't ship?" is no.
+
+If you find yourself listing more than 8 items, you are inventorying — re-cut
+until ≤8 survive the bar.
+
+Worked examples of the bar (from real changelogs):
+
+KEEP:
+- "Fast mode now uses Opus 4.7 by default (previously Opus 4.6)" — model
+  behavior, daily impact.
+- "/model now changes model for current session only — press d to set a new
+  default" — muscle-memory shift on a daily-used command.
+- "/extra-usage renamed to /usage-credits" — renamed command.
+- "Startup hang on unreachable api.anthropic.com fixed (was hanging up to
+  75s)" — daily-driver regression with clear scope.
+- "Plugins with root-level SKILL.md and no skills/ subdir now surfaced as a
+  skill" — architecture-level change to the skill system.
+
+CUT:
+- "claude respawn <id> on stopped session now actually respawns" — niche
+  subcommand.
+- "Fixed ghost characters at left edge in Agent View on Windows Terminal
+  with CJK content" — platform-edge cosmetic.
+- "OTEL tracing improved: agent_id / parent_agent_id on spans" — internal.
+- "claude agents --json flag added for scripting" — niche flag, scripting-
+  only.
+- "Fixed file descriptor exhaustion in skill-dir builds" — narrow internal.
+- "MCP servers with paginated tools/list responses now return all pages" —
+  MCP-author concern, not user-facing.
+- "Fixed Bedrock and Vertex unable to select Opus (1M context) in /model
+  picker" — narrow platform regression, niche to enterprise users.
+
+Emit your FINAL message in this exact shape — no preface, no commentary,
+no closing remarks:
 
 What's new — v<start_version> (<start_date>) → v<latest> (<latest_date>)
+(For the full verbatim list, run /release-notes.)
 
-FULL CHANGELOG
-
-## <version> (<date>)
-- <bullet>
-- <bullet>
+- **<short label>:** <one tight line, plain English, ≤25 words>
+- **<short label>:** <one tight line>
 ...
-(newest first, every delta version, every bullet verbatim)
-
-════════════════════════════════════════════════════════════
-
-KEY
-**<sub-label>:** <one tight line>
-**<sub-label>:** <one tight line>
-...
-
-Curate aggressively. Tailor to how Claude Code is actually used. Prioritize:
-- Model / effort / /fast / context-window changes.
-- Behavior changes that alter muscle memory (defaults that changed, /model
-  scope, renamed commands).
-- Plugin / skill / MCP ecosystem changes.
-- OS stability: file-access / path / sleep-wake / daemon / background-session.
-- Subagent / orchestration / background-agent / hooks.
-
-MINOR
-- <one line each, everything else worth a glance; skip pure-internal noise>
 
 Installed: v<installed> · Latest: v<latest>
-(Omit this final line if `installed` is empty.)
+(Omit the final line entirely if `installed` is empty.)
 
 Return only the digest. The orchestrator will relay your message verbatim.
 ```
 
 ### 6. Relay the sub-agent's final message
-Output the sub-agent's final message exactly as returned. Do not add a
-preface ("Here's what's new…"), a trailing summary, or any commentary. The
-user sees only the digest the sub-agent produced.
+Output the sub-agent's final message exactly as returned. No preface, no
+trailing summary, no commentary. The user sees only the curated digest.
 
 ### 7. Advance the checkpoint
 Unless step 2 aborted on malformed JSON, write
 `~/.claude/state/release-notes-checkpoint.json` with
 `last_version_seen = latest`, `last_checked = today`,
 `latest_at_last_check = latest`. Create `~/.claude/state/` if absent.
-Bare-number, bare, and bootstrap runs all advance the checkpoint (including
-`last_checked = today`).
 
 </process>
 
 <notes>
 - User-level skill → globally available in every project.
-- The sub-agent is the explicit shield against the session's model + credit
-  gate. Don't remove it. Inline skill `model:` frontmatter has been observed
-  not to shield reliably from 1M-context credit gates.
-- Two network calls, fixed: npm registry (on main), then one CHANGELOG fetch
-  (inside the sub-agent). All output is in chat — no files written.
+- The skill's value is the curation, not the source data. `/release-notes` is
+  always the verbatim path. Don't reintroduce verbatim emission here.
+- Sub-agent is the explicit shield against the session's 1M-context credit
+  gate AND keeps the verbatim payload out of the orchestrator's context.
+  Don't remove it.
+- Two network calls, fixed: npm registry (main), one CHANGELOG fetch (in
+  sub-agent). Curated output only — no files, no verbatim.
 </notes>
