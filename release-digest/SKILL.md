@@ -36,10 +36,14 @@ FORBIDDEN — these caused a 5-minute run before and are banned:
 - Any third network call for any reason. If something fails, STOP and report
   it — do not improvise a fallback fetch.
 
-**Streaming-speed rule:** the full verbatim changelog is written to a FILE,
-never streamed into chat. The chat output is only the short curated digest
-(~20 lines). Pasting hundreds of verbatim lines token-by-token is the thing
-that made this nauseatingly slow — never do it.
+**Why this was slow before, and what fixes it:** the 5-minute run happened
+because (a) Opus was streaming the verbatim text token-by-token, and (b) the
+skill made 6 network round-trips instead of 2. The fix is the two-call cap
+above AND `model: sonnet` in the frontmatter — Sonnet streams the same
+verbatim text noticeably faster than Opus. There is no documented Claude Code
+mechanism to skip model-generated streaming, so this is the realistic
+ceiling. Do not try to "speed it up" by trimming the verbatim changelog —
+faithfulness to `/release-notes` is the whole point.
 </cost-contract>
 
 <context>
@@ -134,25 +138,24 @@ are never the content source and were already banned in the cost contract.
 If the raw CHANGELOG is unreachable, STOP with a clear error — do not fall
 back to a summary site (that produces "summary of a summary" shrinkage).
 
-### 6. Write the FULL changelog to a file (NOT to chat)
-Write the complete verbatim delta — newest version first, every bullet, each
-version headed `## <version> (<date>)` using the step-3 dates — to:
-
-`~/.claude/state/release-digest-latest.md`
-
-Begin the file with one title line:
-`# Claude Code — what's new v<start> (<date>) → v<latest> (<date>)`
-
-This file is the scroll-up reference. It is written, never streamed. Do NOT
-echo its contents into chat under any circumstance — that is the slow path
-this skill exists to avoid.
-
-### 7. Stream ONLY the curated digest (short — this is all chat sees)
-Emit, in chat, just this — compact, no verbatim dump:
+### 6. Render the FULL CHANGELOG in chat (verbatim, dates from step 3)
+Emit, newest version first, every version in the delta with its **complete,
+verbatim** bullet list from the source — drop nothing. Head each section
+`## <version> (<date>)` using the dates from step 3. This is the scroll-up
+reference, in chat where you want it. Start with one header line:
 
 ```
 What's new — v<start> (<date>) → v<latest> (<date>)
-Full notes: ~/.claude/state/release-digest-latest.md
+
+FULL CHANGELOG
+```
+
+### 7. Then the curated digest (below a hard divider)
+After the verbatim section, emit a hard divider line and the curated digest —
+terse, one line each, grouped under bold sub-labels if it helps:
+
+```
+════════════════════════════════════════════════════════════
 
 KEY
 ```
@@ -175,8 +178,8 @@ Final line: `Installed: v<x> · Latest: v<y>` — `<x>` from `claude --version`
 (binary at `~/.local/bin/claude`); omit the line if it errors. Informational
 only — never the delta anchor.
 
-Keep the whole chat response to roughly 20–40 lines. If the delta is huge,
-the KEY/MINOR digest still compresses it; the file holds the full text.
+No file is written. Everything goes in chat — the verbatim section above for
+scrollback, the curated digest below for at-a-glance.
 
 ### 8. Move the checkpoint
 Unless this was the malformed-checkpoint abort, write
@@ -191,7 +194,7 @@ Bare-number, bare, and bootstrap runs all advance the checkpoint (including
 <notes>
 - User-level skill → globally available in every project.
 - `model: sonnet` is intentional: fetch + slice + curate doesn't need Opus,
-  and Sonnet streams the curated digest faster.
+  and Sonnet streams the verbatim output noticeably faster.
 - Two network calls, fixed: npm registry (latest + dates), then one CHANGELOG
-  fetch. The full text goes to a file; only the curated digest streams.
+  fetch. Output is fully in-chat (verbatim + curated); no files written.
 </notes>
