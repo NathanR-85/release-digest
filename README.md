@@ -1,16 +1,11 @@
-# release-digest
+# Release Digest
 
 A self-paced companion to Claude Code's built-in `/release-notes`.
 
 `/release-notes` dumps the entire changelog every time, with no dates and no
 memory of what you've already seen. `release-digest` keeps a small local
 checkpoint and, each run, shows **only** the versions released since the last
-time you looked — the full verbatim changelog on top, a curated Key / Minor
-digest below a divider.
-
-The delta is measured against the **latest released** version upstream (the
-GitHub `CHANGELOG.md`), not your locally-installed build, so it surfaces
-changes even before you update.
+time you looked; the full verbatim changelog on top, then a curated **Key Features**, then **Minor Features**.
 
 ## Usage
 
@@ -31,9 +26,13 @@ Copy the `release-digest/` folder into your Claude Code skills directory:
 ```
 
 It registers as a user-level skill (`/release-digest`) available in every
-project. State is stored locally at
+project. 
+
+State is stored locally at
 `~/.claude/state/release-notes-checkpoint.json` and is never published.
 
-## License
+## Notes
 
-MIT — see [LICENSE](LICENSE).
+The delta is measured against the **latest released** version upstream (the
+GitHub `CHANGELOG.md`), not your locally-installed build, so it surfaces
+changes even before you update.
