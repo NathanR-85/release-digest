@@ -152,9 +152,9 @@ no truncation of verbatim content, no near-misses. Every bullet from the
 delta range appears, faithful to the source.
 
 Inputs from the orchestrator (already computed):
-- delta_versions:  <comma-separated list, newest first, e.g. "2.1.144,2.1.143,2.1.142">
-- dates:           <JSON map: {"2.1.144":"2026-05-18", ...}>
-- latest:          <e.g. "2.1.144">
+- delta_versions:  <comma-separated list, newest first, e.g. "A.B.C,A.B.D,A.B.E">
+- dates:           <JSON map: {"A.B.C":"YYYY-MM-DD", ...}>
+- latest:          <e.g. "A.B.C">
 - start_version:   <oldest in delta, e.g. "2.1.142">
 - start_date:      <date of start_version>
 - latest_date:     <date of latest>
