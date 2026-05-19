@@ -226,8 +226,33 @@ CUT:
 - "Fixed Bedrock and Vertex unable to select Opus (1M context) in /model
   picker" — narrow platform regression, niche to enterprise users.
 
+RANKING — the items that survive the cut MUST be ordered most-useful-first.
+The user actively builds things with Claude Code, so rank by how cool /
+useful each item is for someone building. The top items are the headline —
+a reader who only scans the first 2 lines should still know the biggest
+news. There is no separate "KEY vs MINOR" grouping; one ranked list.
+
+Rank by this priority, ties broken by broader applicability:
+
+1. **New capabilities that enable workflows that weren't possible before** —
+   a new view, a new mode, a new top-level command, a fundamental change to
+   the skill / hook / subagent / MCP system. These are the "coolest."
+2. **Model / effort / `/fast` / context-window changes** — daily ergonomics
+   shift.
+3. **Default-changes to high-frequency commands** — muscle-memory shifts on
+   commands you type all day (`/model`, `/resume`, `/clear`, `/plugin`).
+4. **Security / auth changes that affect everyone.**
+5. **Renamed or removed commands** — functional but low surprise.
+6. **Daily-driver regression fixes** (startup hang, common crash, a slash
+   command suddenly broken). Lowest-priority survivors, even though they're
+   useful — most users only care these were fixed, not that they existed.
+
+Within a rank tier, ties broken by: broader applicability > more dramatic
+behavior change > more recent version.
+
 Emit your FINAL message in this exact shape — no preface, no commentary,
-no closing remarks:
+no closing remarks, no "KEY" / "MINOR" / other section headers (just the
+ranked list):
 
 What's new — v<start_version> (<start_date>) → v<latest> (<latest_date>)
 (For the full verbatim list, run /release-notes.)
