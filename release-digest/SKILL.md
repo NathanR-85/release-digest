@@ -162,8 +162,12 @@ delta_versions. You read these to decide what to include — you do NOT emit
 them. If the fetch fails, return exactly: `ERROR: changelog fetch failed —
 <reason>` and stop. No fallback to aggregator sites.
 
-Then apply this STRICT curation filter. Hard cap: 8 items total across the
-whole digest. Aim for 4–6.
+Then apply this STRICT curation filter. There is NO cap and NO target count
+— ship every item that survives the bar, cut every item that doesn't. The
+bar is: the reader is extremely busy. If they'd skim past it, it doesn't
+ship. If a release genuinely has 12 things worth knowing, include all 12.
+If it only has 2, ship 2. Padding to hit a target is the failure mode;
+inventorying for completeness is the other failure mode.
 
 INCLUDE (a change qualifies only if it clearly hits one of these):
 - Model behavior changes — Opus/Sonnet/Haiku/`/fast`/effort/context-window.
@@ -196,8 +200,9 @@ EXCLUDE — every one of these is an automatic cut, no exceptions:
 - Restoring/re-enabling obscure features after a regression.
 - Anything where the answer to "would I notice if this didn't ship?" is no.
 
-If you find yourself listing more than 8 items, you are inventorying — re-cut
-until ≤8 survive the bar.
+If you're scratching for things to add, you've already passed the bar — stop.
+The busy-reader test is "would they thank me for surfacing this?", not "is
+this technically a change?"
 
 Worked examples of the bar (from real changelogs):
 
@@ -226,39 +231,85 @@ CUT:
 - "Fixed Bedrock and Vertex unable to select Opus (1M context) in /model
   picker" — narrow platform regression, niche to enterprise users.
 
-RANKING — the items that survive the cut MUST be ordered most-useful-first.
-The user actively builds things with Claude Code, so rank by how cool /
-useful each item is for someone building. The top items are the headline —
-a reader who only scans the first 2 lines should still know the biggest
-news. There is no separate "KEY vs MINOR" grouping; one ranked list.
+SECTIONS — split surviving items into two groups, FEATURES first, then BUGS.
 
-Rank by this priority, ties broken by broader applicability:
+A change is a FEATURE if it adds capability, changes default behavior,
+renames a command, or shifts how something works. A change is a BUG if the
+changelog frames it as "fixed X" — including security holes that were
+closed. Within each section, rank most-useful-first; the top of each
+section is the section's headline.
 
-1. **New capabilities that enable workflows that weren't possible before** —
-   a new view, a new mode, a new top-level command, a fundamental change to
-   the skill / hook / subagent / MCP system. These are the "coolest."
-2. **Model / effort / `/fast` / context-window changes** — daily ergonomics
-   shift.
-3. **Default-changes to high-frequency commands** — muscle-memory shifts on
-   commands you type all day (`/model`, `/resume`, `/clear`, `/plugin`).
-4. **Security / auth changes that affect everyone.**
-5. **Renamed or removed commands** — functional but low surprise.
-6. **Daily-driver regression fixes** (startup hang, common crash, a slash
-   command suddenly broken). Lowest-priority survivors, even though they're
-   useful — most users only care these were fixed, not that they existed.
+Rank within FEATURES (most-useful first):
+1. New capabilities that enable workflows that weren't possible before — a
+   new view, mode, top-level command, or a fundamental change to the skill
+   / hook / subagent / MCP system.
+2. Model / effort / `/fast` / context-window changes (daily ergonomics).
+3. Default-changes to high-frequency commands (`/model`, `/resume`,
+   `/clear`, `/plugin`) — muscle-memory shifts.
+4. Renamed or removed commands.
+
+Rank within BUGS (most-impactful first):
+1. Security or auth holes closed — affects everyone whether they noticed
+   or not.
+2. Daily-driver regressions: startup hang, common crash, a slash command
+   suddenly not working, a previously-working feature broken in a recent
+   version.
 
 Within a rank tier, ties broken by: broader applicability > more dramatic
-behavior change > more recent version.
+impact > more recent version.
+
+If a section has zero surviving items, omit the section header entirely —
+don't write "FEATURES" / "BUGS" with nothing under it.
+
+VOICE — match Anthropic's CHANGELOG style exactly. Each bullet is a single
+declarative line that could have been written by them. Rules:
+
+- Start with the subject or the verb. No bolded labels, no `**Label:**`
+  prefix, no leading "this change adds…" framing.
+- Use inline code (backticks) for commands, flags, paths, env vars, and
+  setting names — every time they appear.
+- Add a short parenthetical for scope when it helps (e.g. "(regression in
+  v2.1.143)", "(was hanging up to 75s)", "(old name still works)").
+- Past-tense / present-tense follows their lead: features as "X now does
+  Y", bugs as "Fixed X" or "X fixed".
+- One line per item. No trailing summary clauses.
+
+Style match examples (these would feel native in `/release-notes`):
+
+- `/model` now changes the model for the current session only — press `d`
+  in the picker to set a default for new sessions
+- `/extra-usage` renamed to `/usage-credits` (old name still works)
+- `/resume` picker now lists background sessions (marked `bg`)
+- `/plugin` Browse and Discover panes now show a plugin's commands,
+  agents, skills, hooks, and MCP servers before install
+- Fixed a permission-prompt bypass where bare variable assignments to
+  non-allowlisted environment variables in Bash were auto-approved
+- Fixed skills using `context: fork` re-invoking themselves in a loop
+- Fixed startup hanging up to 75s when `api.anthropic.com` was unreachable
+  — side-channel calls now time out after 15s
+- Fixed MCP servers with paginated `tools/list` responses silently
+  dropping tools after the first page
+
+DO NOT write:
+- "**`/model` now session-scoped by default:** Changing the model…"
+  (label-prefix style, not Anthropic voice)
+- "Now you can do X" (marketing voice)
+- "We've improved Y" (first-person plural is not their voice)
 
 Emit your FINAL message in this exact shape — no preface, no commentary,
-no closing remarks, no "KEY" / "MINOR" / other section headers (just the
-ranked list):
+no closing remarks:
 
 What's new — v<start_version> (<start_date>) → v<latest> (<latest_date>)
 (For the full verbatim list, run /release-notes.)
 
-- **<short label>:** <one tight line, plain English, ≤25 words>
-- **<short label>:** <one tight line>
+**Features**
+- <Anthropic-voice line, see examples above>
+- <Anthropic-voice line>
+...
+
+**Bugs**
+- <Anthropic-voice line, "Fixed X" style>
+- <Anthropic-voice line>
 ...
 
 Installed: v<installed> · Latest: v<latest>
