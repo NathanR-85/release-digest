@@ -1,7 +1,7 @@
 ---
 name: release-digest
 description: "Curated digest of Claude Code changes since you last checked — only what affects a daily user's workflow. For verbatim notes, run /release-notes. Triggers: /release-digest, \"what's new in Claude Code\", \"CC release digest\", \"changes since I last checked\"."
-argument-hint: "[N]   (N = days to look back; omit = only what's new since last run; --reset = mark all seen)"
+argument-hint: "[N]   (N = days to look back; omit = only what's new since last run)"
 allowed-tools:
   - Bash
   - Read
@@ -29,8 +29,8 @@ The skill runs the heavy reading + curation inside a sub-agent on Sonnet:
    history could trip the paid-tier gate. The sub-agent has a fresh small
    context — never trips, regardless of session state.
 2. **Output is small either way.** Sub-agent reads ~700 verbatim bullets but
-   returns only ≤8 curated items, so the orchestrator's relay is tiny and
-   fast on any model.
+   returns only a curated set, so the orchestrator's relay is tiny and fast
+   on any model.
 
 Orchestrator only does cheap deterministic work: curl, checkpoint read/write,
 delta math, sub-agent dispatch. The orchestrator does NOT read the verbatim
@@ -47,7 +47,8 @@ EXACTLY TWO network calls across the run:
    delta range, verbatim. The sub-agent reads it and curates; it is never
    relayed verbatim to chat.
 
-For `--reset` and the no-op fast path, only call 1 happens — no sub-agent.
+For the first-run init and the no-op fast path, only call 1 happens — no
+sub-agent.
 
 FORBIDDEN — caused a 5-minute run before, banned:
 - Re-fetching the CHANGELOG to "check latest" — npm gives `latest`.
@@ -60,13 +61,14 @@ FORBIDDEN — caused a 5-minute run before, banned:
 <context>
 A bare number is the days to look back:
 
-- `/release-digest`        → only versions newer than the checkpoint
-                             (self-paced default; prints nothing if current).
-- `/release-digest 7`      → every version released in the last 7 days,
-                             regardless of the checkpoint.
-- `/release-digest --reset`→ mark everything as seen, print one line, stop.
+- `/release-digest`     → only versions newer than the checkpoint
+                          (self-paced default; prints nothing if current).
+- `/release-digest 7`   → every version released in the last 7 days,
+                          regardless of the checkpoint.
 
-No other arguments.
+No other arguments. First run initializes the checkpoint silently — no
+implicit window. If you want a window on first run, pass the number
+explicitly.
 
 Checkpoint file: `~/.claude/state/release-notes-checkpoint.json`
 Schema (example values — not real data):
@@ -76,23 +78,7 @@ Schema (example values — not real data):
 
 <process>
 
-### 1. Handle `--reset` first (no sub-agent)
-If `--reset` is present: run the npm curl from step 3 to get `latest`. Write
-the checkpoint with `last_version_seen = latest`, `last_checked = today`,
-`latest_at_last_check = latest`. Print one line:
-`Checkpoint reset to v<latest> (<today>). Nothing to report.` — STOP.
-
-### 2. Read the checkpoint
-Read `~/.claude/state/release-notes-checkpoint.json`.
-
-- **Missing file** → bootstrap mode (8-day window, unless a bare number was
-  passed — then that many days).
-- **Malformed JSON** → do NOT silently rebuild. Print:
-  `⚠️ Checkpoint at ~/.claude/state/release-notes-checkpoint.json is
-  unreadable: <error>. Re-run with --reset to rebuild, or fix it by hand.`
-  Then STOP. Fail loud.
-
-### 3. NETWORK CALL 1 — npm registry (on main, no sub-agent)
+### 1. NETWORK CALL 1 — npm registry (on main, no sub-agent)
 Single Bash call:
 
 ```bash
@@ -106,17 +92,38 @@ curl -s "https://registry.npmjs.org/@anthropic-ai/claude-code" \
 Pure Bash — no model generation, no credit-gate risk. Parse `latest` and
 `dates`. If curl/jq fails, STOP with the error.
 
-### 4. Compute the delta set (no network)
+### 2. Read the checkpoint (and first-run init)
+Read `~/.claude/state/release-notes-checkpoint.json`.
+
+- **Missing file AND no bare number passed (first run):** write the
+  checkpoint with `last_version_seen = latest`, `last_checked = today`,
+  `latest_at_last_check = latest`. Print exactly one line and STOP:
+
+  ```
+  Tracking from v<latest> (<today>). Next run will show what's new.
+  ```
+
+  Do not show a window. The user gets a clean starting point; subsequent
+  runs show only what's new.
+
+- **Missing file AND bare number `N` passed:** treat as a normal bare-N
+  run (proceed to step 3). The checkpoint will be written at step 6.
+
+- **Malformed JSON:** do NOT silently rebuild. Print:
+  `⚠️ Checkpoint at ~/.claude/state/release-notes-checkpoint.json is
+  unreadable: <error>. Delete the file to start over, or fix it by hand.`
+  Then STOP. Fail loud.
+
+### 3. Compute the delta set (no network)
 Start point:
 - **Bare number `N`** → every version whose publish date ≥ (`latest`'s date
-  − `N` days). Normal run; checkpoint WILL move (step 7).
-- else if checkpoint exists → every version `>` `last_version_seen`.
-- else (bootstrap) → every version within the last 8 days of `latest`'s date.
+  − `N` days). Normal run; checkpoint WILL move (step 6).
+- else (checkpoint exists) → every version `>` `last_version_seen`.
 
 Compare versions numerically by component.
 
 **No-op fast path — checkpoint mode only, if `last_version_seen ≥ latest`:**
-emit EXACTLY these two lines and nothing else, then go to step 7 (refresh
+emit EXACTLY these two lines and nothing else, then go to step 6 (refresh
 date) and STOP:
 
 ```
@@ -127,7 +134,7 @@ Installed: v<x> · Changelog: v<latest>
 (Omit line 2 only if `claude --version` errors.) One fact, stated once. Any
 sentence beyond these two lines is a skill violation.
 
-### 5. Delegate curation to a Sonnet sub-agent
+### 4. Delegate curation to a Sonnet sub-agent
 Spawn one Agent tool call:
 
 - `subagent_type`: `general-purpose`
@@ -328,15 +335,17 @@ Installed: v<installed> · Latest: v<latest>
 Return only the digest. The orchestrator will relay your message verbatim.
 ```
 
-### 6. Relay the sub-agent's final message
+### 5. Relay the sub-agent's final message
 Output the sub-agent's final message exactly as returned. No preface, no
 trailing summary, no commentary. The user sees only the curated digest.
 
-### 7. Advance the checkpoint
+### 6. Advance the checkpoint
 Unless step 2 aborted on malformed JSON, write
 `~/.claude/state/release-notes-checkpoint.json` with
 `last_version_seen = latest`, `last_checked = today`,
 `latest_at_last_check = latest`. Create `~/.claude/state/` if absent.
+(First-run init already wrote it in step 2 and STOPped, so this step only
+runs for actual digest emissions.)
 
 </process>
 
@@ -349,4 +358,7 @@ Unless step 2 aborted on malformed JSON, write
   Don't remove it.
 - Two network calls, fixed: npm registry (main), one CHANGELOG fetch (in
   sub-agent). Curated output only — no files, no verbatim.
+- First run silently initializes the checkpoint. To see a window on first
+  run, pass a number explicitly (e.g. `/release-digest 14`). To re-seed
+  later, delete the checkpoint file by hand.
 </notes>

@@ -9,8 +9,9 @@ The built-in `/release-notes` shows everything every time. This one remembers wh
 ```
 /release-digest          # since you last ran it
 /release-digest 7        # last 7 days
-/release-digest --reset  # mark all as seen
 ```
+
+First run silently sets the checkpoint to the current latest and exits. To see a window on first run, pass a number.
 
 ## Install
 
