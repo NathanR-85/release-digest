@@ -8,16 +8,14 @@ The built-in `/release-notes` shows the entire changelog every time. This one re
 
 ```
 /release-digest          # only what's new since you last ran it
-/release-digest 7        # everything from the last 7 days
+/release-digest 7        # refresher: the last 7 days, even if you've seen some
 ```
 
-The first time you run it, it just marks where you are now and exits without showing anything. From the next run on, you'll only see what's new. If you want a digest right away, type a number after the command (like `/release-digest 7`) — that's how many days back to look.
+The first time you run it, it shows the last 8 days and starts tracking from there. After that, the bare command shows only what's new. The number argument is for when you want a mental refresh — it shows a window without changing what you've already seen.
 
 ## Install
 
 In Claude Code, ask it to install this skill from this repo. Tell it **user-level** if you want the command available in every project, or **project-level** if you only want it in one.
-
-Your run history is stored locally and never published.
 
 ## License
 

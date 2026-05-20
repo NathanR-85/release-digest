@@ -92,23 +92,13 @@ curl -s "https://registry.npmjs.org/@anthropic-ai/claude-code" \
 Pure Bash — no model generation, no credit-gate risk. Parse `latest` and
 `dates`. If curl/jq fails, STOP with the error.
 
-### 2. Read the checkpoint (and first-run init)
+### 2. Read the checkpoint
 Read `~/.claude/state/release-notes-checkpoint.json`.
 
-- **Missing file AND no bare number passed (first run):** write the
-  checkpoint with `last_version_seen = latest`, `last_checked = today`,
-  `latest_at_last_check = latest`. Print exactly one line and STOP:
-
-  ```
-  Tracking from v<latest> (<today>). Next run will show what's new.
-  ```
-
-  Do not show a window. The user gets a clean starting point; subsequent
-  runs show only what's new.
-
-- **Missing file AND bare number `N` passed:** treat as a normal bare-N
-  run (proceed to step 3). The checkpoint will be written at step 6.
-
+- **Missing file (first run):** bootstrap mode — show the last 8 days
+  (unless a bare number `N` was passed, in which case use that many days).
+  Proceed to step 3. The checkpoint will be written at step 6 after the
+  digest emits.
 - **Malformed JSON:** do NOT silently rebuild. Print:
   `⚠️ Checkpoint at ~/.claude/state/release-notes-checkpoint.json is
   unreadable: <error>. Delete the file to start over, or fix it by hand.`
@@ -117,8 +107,11 @@ Read `~/.claude/state/release-notes-checkpoint.json`.
 ### 3. Compute the delta set (no network)
 Start point:
 - **Bare number `N`** → every version whose publish date ≥ (`latest`'s date
-  − `N` days). Normal run; checkpoint WILL move (step 6).
-- else (checkpoint exists) → every version `>` `last_version_seen`.
+  − `N` days). This is a "mental refresh" — see step 6 for checkpoint
+  behavior.
+- else if checkpoint exists → every version `>` `last_version_seen`.
+- else (bootstrap — no checkpoint, no number) → every version within the
+  last 8 days of `latest`'s date.
 
 Compare versions numerically by component.
 
@@ -339,13 +332,23 @@ Return only the digest. The orchestrator will relay your message verbatim.
 Output the sub-agent's final message exactly as returned. No preface, no
 trailing summary, no commentary. The user sees only the curated digest.
 
-### 6. Advance the checkpoint
-Unless step 2 aborted on malformed JSON, write
-`~/.claude/state/release-notes-checkpoint.json` with
+### 6. Advance the checkpoint (conditionally)
+The checkpoint moves to `latest` / today in these cases:
+- Bare run with no argument and an existing checkpoint (incremental
+  delivery).
+- First run with no checkpoint, regardless of whether a number was passed
+  (seeds the tracking).
+
+The checkpoint does NOT move when:
+- A bare number was passed AND a checkpoint already exists. This is a
+  mental-refresh lookback — the user is re-reading a window, not consuming
+  new content, so leaving the checkpoint alone preserves anything they
+  hadn't actually read yet between their last check and the refresh
+  window.
+
+When moving, write `~/.claude/state/release-notes-checkpoint.json` with
 `last_version_seen = latest`, `last_checked = today`,
 `latest_at_last_check = latest`. Create `~/.claude/state/` if absent.
-(First-run init already wrote it in step 2 and STOPped, so this step only
-runs for actual digest emissions.)
 
 </process>
 
@@ -358,7 +361,9 @@ runs for actual digest emissions.)
   Don't remove it.
 - Two network calls, fixed: npm registry (main), one CHANGELOG fetch (in
   sub-agent). Curated output only — no files, no verbatim.
-- First run silently initializes the checkpoint. To see a window on first
-  run, pass a number explicitly (e.g. `/release-digest 14`). To re-seed
-  later, delete the checkpoint file by hand.
+- First run shows the last 8 days (or `N` days if a number was passed) and
+  writes the checkpoint after. Subsequent bare runs show only what's new
+  since the checkpoint. Subsequent number runs are "mental refresh"
+  lookbacks that do NOT move the checkpoint. To re-seed, delete the
+  checkpoint file by hand.
 </notes>
