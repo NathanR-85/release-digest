@@ -8,10 +8,10 @@ The built-in `/release-notes` shows the entire changelog every time. This one re
 
 ```
 /release-digest          # only what's new since you last ran it
-/release-digest 7        # refresher: the last 7 days, even if you've seen some
+/release-digest 7        # refresher: everything from the last 7 days
 ```
 
-The first time you run it, it shows the last 8 days and starts tracking from there. After that, the bare command shows only what's new. The number argument is for when you want a mental refresh — it shows a window without changing what you've already seen.
+The first time you run it, it shows the last 8 days. After that, the bare command shows only what's new. Add a number when you want a refresher window — it'll show you the last N days even if you've already seen some of it. Every run updates "the last time you looked."
 
 ## Install
 

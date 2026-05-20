@@ -107,8 +107,7 @@ Read `~/.claude/state/release-notes-checkpoint.json`.
 ### 3. Compute the delta set (no network)
 Start point:
 - **Bare number `N`** → every version whose publish date ≥ (`latest`'s date
-  − `N` days). This is a "mental refresh" — see step 6 for checkpoint
-  behavior.
+  − `N` days). Normal run; checkpoint WILL move (step 6).
 - else if checkpoint exists → every version `>` `last_version_seen`.
 - else (bootstrap — no checkpoint, no number) → every version within the
   last 8 days of `latest`'s date.
@@ -332,23 +331,14 @@ Return only the digest. The orchestrator will relay your message verbatim.
 Output the sub-agent's final message exactly as returned. No preface, no
 trailing summary, no commentary. The user sees only the curated digest.
 
-### 6. Advance the checkpoint (conditionally)
-The checkpoint moves to `latest` / today in these cases:
-- Bare run with no argument and an existing checkpoint (incremental
-  delivery).
-- First run with no checkpoint, regardless of whether a number was passed
-  (seeds the tracking).
-
-The checkpoint does NOT move when:
-- A bare number was passed AND a checkpoint already exists. This is a
-  mental-refresh lookback — the user is re-reading a window, not consuming
-  new content, so leaving the checkpoint alone preserves anything they
-  hadn't actually read yet between their last check and the refresh
-  window.
-
-When moving, write `~/.claude/state/release-notes-checkpoint.json` with
+### 6. Advance the checkpoint
+Unless step 2 aborted on malformed JSON, write
+`~/.claude/state/release-notes-checkpoint.json` with
 `last_version_seen = latest`, `last_checked = today`,
-`latest_at_last_check = latest`. Create `~/.claude/state/` if absent.
+`latest_at_last_check = latest`. Create `~/.claude/state/` if absent. Every
+run that emits a digest moves the checkpoint — bare runs, number runs, and
+first-run bootstrap alike. Once a version has been shown, it counts as
+seen.
 
 </process>
 
@@ -361,9 +351,8 @@ When moving, write `~/.claude/state/release-notes-checkpoint.json` with
   Don't remove it.
 - Two network calls, fixed: npm registry (main), one CHANGELOG fetch (in
   sub-agent). Curated output only — no files, no verbatim.
-- First run shows the last 8 days (or `N` days if a number was passed) and
-  writes the checkpoint after. Subsequent bare runs show only what's new
-  since the checkpoint. Subsequent number runs are "mental refresh"
-  lookbacks that do NOT move the checkpoint. To re-seed, delete the
-  checkpoint file by hand.
+- First run shows the last 8 days (or `N` days if a number was passed).
+  Every run that emits a digest moves the checkpoint forward — bare runs,
+  number runs, first-run bootstrap. To re-seed, delete the checkpoint
+  file by hand.
 </notes>
