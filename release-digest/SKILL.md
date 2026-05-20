@@ -261,40 +261,50 @@ impact > more recent version.
 If a section has zero surviving items, omit the section header entirely —
 don't write "FEATURES" / "BUGS" with nothing under it.
 
-VOICE — match Anthropic's CHANGELOG style exactly. Each bullet is a single
-declarative line that could have been written by them. Rules:
+FORMAT — every bullet is a **bold lead** acting as the TL;DR, followed by
+a colon and a short Anthropic-voice explanation. The lead is what an
+extremely busy reader sees when they scan ONLY the bold parts; the
+explanation is what they read if the lead caught them. Both lead and
+explanation are written in Anthropic's CHANGELOG voice — no marketing, no
+first-person plural, inline code for commands/flags/paths/env vars,
+parenthetical scope where it helps.
 
-- Start with the subject or the verb. No bolded labels, no `**Label:**`
-  prefix, no leading "this change adds…" framing.
-- Use inline code (backticks) for commands, flags, paths, env vars, and
-  setting names — every time they appear.
-- Add a short parenthetical for scope when it helps (e.g. "(regression in
-  v2.1.143)", "(was hanging up to 75s)", "(old name still works)").
-- Past-tense / present-tense follows their lead: features as "X now does
-  Y", bugs as "Fixed X" or "X fixed".
-- One line per item. No trailing summary clauses.
+Rules:
+- Lead: 3–8 words, captures the headline. NOT a generic "X update" — name
+  what changed.
+- Explanation: one line, declarative. Features as "now does X". Bugs as
+  "X was Y; now Z" or "fixed when X".
+- Use inline code (backticks) on every command, flag, path, env var,
+  setting name, file name. Every time.
+- No first-person plural ("we", "us"), no marketing ("powerful",
+  "seamlessly"), no "this change", no "introducing".
+- One bullet = one line on screen. No multi-sentence bullets.
 
-Style match examples (these would feel native in `/release-notes`):
+Format examples (lead + explanation):
 
-- `/model` now changes the model for the current session only — press `d`
-  in the picker to set a default for new sessions
-- `/extra-usage` renamed to `/usage-credits` (old name still works)
-- `/resume` picker now lists background sessions (marked `bg`)
-- `/plugin` Browse and Discover panes now show a plugin's commands,
-  agents, skills, hooks, and MCP servers before install
-- Fixed a permission-prompt bypass where bare variable assignments to
-  non-allowlisted environment variables in Bash were auto-approved
-- Fixed skills using `context: fork` re-invoking themselves in a loop
-- Fixed startup hanging up to 75s when `api.anthropic.com` was unreachable
-  — side-channel calls now time out after 15s
-- Fixed MCP servers with paginated `tools/list` responses silently
-  dropping tools after the first page
+- **`/model` now session-scoped:** changes the model for the current
+  session only; press `d` in the picker to set a default for new sessions
+- **`/extra-usage` renamed to `/usage-credits`:** old name still works
+- **`/resume` now lists background sessions:** sessions started via
+  `--bg` or the agent view appear in the picker, marked `bg`
+- **`/plugin` shows inventory before install:** Browse and Discover panes
+  now list a plugin's commands, agents, skills, hooks, and MCP servers
+- **Permission-prompt bypass closed:** bare variable assignments to
+  non-allowlisted env vars in Bash commands were auto-approved without a
+  prompt; now correctly gated
+- **Skill `context: fork` loop fixed:** a skill using fork could re-invoke
+  itself in a loop instead of running
+- **Startup hang fixed:** unreachable `api.anthropic.com` (captive portal,
+  VPN, firewall) was hanging launch up to 75s; side-channel calls now
+  time out after 15s
+- **MCP paginated tool list fixed:** servers with paginated `tools/list`
+  responses were silently dropping tools after the first page
 
 DO NOT write:
-- "**`/model` now session-scoped by default:** Changing the model…"
-  (label-prefix style, not Anthropic voice)
-- "Now you can do X" (marketing voice)
-- "We've improved Y" (first-person plural is not their voice)
+- Bullets without a bold lead (flat declarative is harder to skim).
+- "Now you can do X" or "Now supports X" (marketing voice).
+- "We've improved Y" or "We added Z" (first-person plural).
+- "**Update to `/model`:**" — generic leads. Name the actual change.
 
 Emit your FINAL message in this exact shape — no preface, no commentary,
 no closing remarks:
@@ -303,13 +313,13 @@ What's new — v<start_version> (<start_date>) → v<latest> (<latest_date>)
 (For the full verbatim list, run /release-notes.)
 
 **Features**
-- <Anthropic-voice line, see examples above>
-- <Anthropic-voice line>
+- **<bold lead, 3–8 words>:** <Anthropic-voice explanation, one line>
+- **<bold lead>:** <explanation>
 ...
 
 **Bugs**
-- <Anthropic-voice line, "Fixed X" style>
-- <Anthropic-voice line>
+- **<bold lead>:** <Anthropic-voice explanation, "fixed X" framing>
+- **<bold lead>:** <explanation>
 ...
 
 Installed: v<installed> · Latest: v<latest>
